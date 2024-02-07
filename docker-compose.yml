@@ -1,0 +1,15 @@
+version: '3.9'
+services:
+  db:
+    container_name: nestjs-jwt-at-rt
+    image: postgres:16
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=12345
+      - POSTGRES_DB=nestjs
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata: {}
