@@ -4,7 +4,6 @@ import { AuthDto } from './dto/auth.dto';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { Tokens } from './types';
-import { use } from 'passport';
 
 @Injectable()
 export class AuthService {
@@ -12,8 +11,6 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
   ) {}
-
-
 
   async signUpLocal(dto: AuthDto): Promise<Tokens> {
     const hash = await this.hashData(dto.password);
@@ -23,55 +20,94 @@ export class AuthService {
         hash,
       },
     });
-    const tokens = await this.getTokens(newUser.id, newUser.email);
-    await this.updateRtHash(newUser.id, tokens.refresh_token);
+    const { accessToken, refreshToken } = await this.getTokens(
+      newUser.id,
+      newUser.email,
+    );
+    await this.updateRtHash(newUser.id, refreshToken);
 
-    return tokens;
+    return {
+      accessToken,
+      refreshToken,
+    };
   }
 
-  async signInLocal(dto: AuthDto) {
+  async signInLocal(dto: AuthDto): Promise<Tokens> {
     const user = await this.prisma.user.findUnique({
-        where: {
-            email: dto.email
-        }
-    })
+      where: {
+        email: dto.email,
+      },
+    });
 
-    if(!user){
-        throw new ForbiddenException("Access Denied !")
+    if (!user) {
+      throw new ForbiddenException('Access Denied !');
     }
 
-    const passwordMatches = await bcrypt.compare(dto.password, user.hash)
-    if(!passwordMatches){
-        throw new ForbiddenException("Access Denied !")
+    const passwordMatches = await bcrypt.compare(dto.password, user.hash);
+    if (!passwordMatches) {
+      throw new ForbiddenException('Access Denied !');
     }
+
     const tokens = await this.getTokens(user.id, user.email);
-    await this.updateRtHash(user.id, tokens.refresh_token);
+    await this.updateRtHash(user.id, tokens.refreshToken);
 
     return tokens;
   }
+
   async logout(userId: number) {
     await this.prisma.user.updateMany({
-        where: {
-            id: userId,
-            hashedRt: {
-                not: null
-            }
+      where: {
+        id: userId,
+        hashedRt: {
+          not: null,
         },
-        data: {
-            hashedRt: null
-        }
-    })
+      },
+      data: {
+        hashedRt: null,
+      },
+    });
+    return {
+      message: 'Logout Successful !',
+    };
   }
-  refreshTokens() {}
 
-  async updateRtHash(userId: number, rt: string) {
-    const hash = await this.hashData(rt);
+  // async refreshTokens(id: number,email:string) {
+  //   // validate refresh token
+
+  //   return await this.getTokens(id,email)
+
+  // }
+
+  async refreshTokens(userId: number, refreshToken: string): Promise<Tokens> {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+    });
+
+    if (!user) {
+      throw new ForbiddenException('Access Denied !');
+    }
+
+    // const refreshTokenMatches = await bcrypt.compare(refreshToken, user.hashedRt)
+    if (refreshToken !== user.hashedRt) {
+      throw new ForbiddenException('Access Denied !');
+    }
+
+    const tokens = await this.getTokens(user.id, user.email);
+    await this.updateRtHash(user.id, tokens.refreshToken);
+    return tokens;
+  }
+
+  async updateRtHash(userId: number, refreshToken: string) {
+    // const hash = await this.hashData(refreshToken);
     await this.prisma.user.update({
       where: {
         id: userId,
       },
       data: {
-        hashedRt: hash,
+        // hashedRt: hash,
+        hashedRt: refreshToken,
       },
     });
   }
@@ -80,32 +116,32 @@ export class AuthService {
     return bcrypt.hash(data, 10);
   }
 
-  async getTokens(userId: number, email: string) {
+  async getTokens(userId: number, email: string): Promise<Tokens> {
     const [at, rt] = await Promise.all([
       this.jwtService.signAsync(
         {
-          sub: userId,
+          id: userId,
           email,
         },
         {
           secret: 'at-secret',
-          expiresIn: 60 * 15,
+          expiresIn: '30s', //should be 60?
         },
       ),
       this.jwtService.signAsync(
         {
-          sub: userId,
+          id: userId,
           email,
         },
         {
           secret: 'rt-secret',
-          expiresIn: 60 * 60 * 24 * 7,
+          expiresIn: '1d', //should be 120?
         },
       ),
     ]);
     return {
-      access_token: at,
-      refresh_token: rt,
+      accessToken: at,
+      refreshToken: rt,
     };
   }
 }
