@@ -41,6 +41,7 @@ export class AuthController {
     return this.authService.logout(userId);
   }
 
+  @Public()
   @UseGuards(RtGuard)
   @Post('refresh')
   refreshToken(
